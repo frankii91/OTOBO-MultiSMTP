@@ -2,9 +2,8 @@
 <otobo_package version="1.0">
     <!-- GENERATED WITH OPM::Maker::Command::sopm (1.1.0) -->
     <Name>MultiSMTP</Name>
-    <Version>10.0.2</Version>
-    <Framework>10.0.x</Framework>
-    <Framework>10.1.x</Framework>
+    <Version>11.1.0</Version>
+    <Framework>11.1.x</Framework>
     <Vendor>Perl-Services.de</Vendor>
     <URL>https://www.perl-services.de</URL>
     <Description Lang="de">Ein Modul, mit dem man mehrere SMTP-Server für OTOBO nutzen kann.</Description>
@@ -30,6 +29,10 @@
         <File Permission="644" Location="doc/en/MultiSMTP.pod" />
         <File Permission="644" Location="doc/hu/MultiSMTP.pod" />
         <File Permission="644" Location="doc/ru/MultiSMTP.pod" />
+        <File Permission="644" Location="scripts/test/MultiSMTP/Accounts.t" />
+        <File Permission="644" Location="scripts/test/MultiSMTP/Send.t" />
+        <File Permission="644" Location="scripts/test/MultiSMTP/MailQueue.t" />
+        <File Permission="644" Location="scripts/test/MultiSMTP/Admin.t" />
     </Filelist>
     <DatabaseInstall Type="post">
         <TableCreate Name="ps_multi_smtp">
@@ -46,12 +49,17 @@
             <Column Name="valid_id" Required="true" Type="SMALLINT" />
             <Column Name="change_time" Required="true" Type="DATE" />
             <Column Name="change_by" Required="true" Type="INTEGER" />
+            <Column Name="auth_method" Required="true" Type="VARCHAR" Size="20" Default="Basic" />
+            <Column Name="oauth2_functional_account_id" Required="false" Type="INTEGER" />
             <ForeignKey ForeignTable="users">
                 <Reference Local="create_by" Foreign="id" />
                 <Reference Local="change_by" Foreign="id" />
             </ForeignKey>
             <ForeignKey ForeignTable="valid">
                 <Reference Local="valid_id" Foreign="id" />
+            </ForeignKey>
+            <ForeignKey ForeignTable="oidc_functional_accounts">
+                <Reference Local="oauth2_functional_account_id" Foreign="id" />
             </ForeignKey>
         </TableCreate>
         <TableCreate Name="ps_multi_smtp_address">
@@ -68,19 +76,22 @@
             <ColumnChange NameNew="stmp_user" NameOld="user" Required="true" Type="VARCHAR" Size="200" />
             <ColumnChange NameNew="stmp_password" NameOld="password" Required="true" Type="VARCHAR" Size="250" />
         </TableAlter>
+        <TableAlter Name="ps_multi_smtp" Version="11.1.0">
+            <ColumnAdd Name="auth_method" Required="true" Type="VARCHAR" Size="20" Default="Basic" />
+            <ColumnAdd Name="oauth2_functional_account_id" Required="false" Type="INTEGER" />
+            <ForeignKeyCreate ForeignTable="oidc_functional_accounts">
+                <Reference Local="oauth2_functional_account_id" Foreign="id" />
+            </ForeignKeyCreate>
+        </TableAlter>
     </DatabaseUpgrade>
     <DatabaseUninstall Type="pre">
         <TableDrop Name="ps_multi_smtp_address" />
         <TableDrop Name="ps_multi_smtp" />
     </DatabaseUninstall>
     <IntroInstall Type="post" Lang="en" Title="Change Email sender module"><![CDATA[
-            To send the email through different SMTP servers, set the SysConfig option SendmailModule<br />
- in group "Framework" and subgroup "Core::Sendmail" to <br />
-MultiSMTP.<br /><br />
+            To send emails through different SMTP servers, set SendmailModule in System Configuration to Kernel::System::Email::MultiSMTP.<br /><br />
     ]]></IntroInstall>
     <IntroInstall Type="post" Lang="de" Title="E-Mail-Modul ändern"><![CDATA[
-            Zur Nutzung unterschiedlicher SMTP-Server müssen Sie die Einstellung SendmailModule in der SysConfig<br />
- ändern. Die Option können Sie in der Gruppe<br />
-"Framework" und Subgruppe "Core::Sendmail" finden.<br /><br />
+            Zur Nutzung unterschiedlicher SMTP-Server setzen Sie SendmailModule in der Systemkonfiguration auf Kernel::System::Email::MultiSMTP.<br /><br />
     ]]></IntroInstall>
 </otobo_package>

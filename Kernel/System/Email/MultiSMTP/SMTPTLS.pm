@@ -19,60 +19,29 @@ package Kernel::System::Email::MultiSMTP::SMTPTLS;
 use strict;
 use warnings;
 
-use Net::SMTP;
-
-# ---
-# PS
-# ---
-# use parent qw(Kernel::System::Email::SMTP);
 use parent 'Kernel::System::Email::MultiSMTP::SMTP';
-# ---
+use IO::Socket::SSL ();
 
 our @ObjectDependencies = (
+    'Kernel::Config',
     'Kernel::System::Log',
 );
-
-# Use Net::SSLGlue::SMTP on systems with older Net::SMTP modules that cannot handle SMTPTLS.
-BEGIN {
-    if ( !defined &Net::SMTP::starttls ) {
-        ## nofilter(TidyAll::Plugin::OTOBO::Perl::Require)
-        ## nofilter(TidyAll::Plugin::OTOBO::Perl::SyntaxCheck)
-        require Net::SSLGlue::SMTP;
-    }
-}
 
 sub _Connect {
     my ( $Self, %Param ) = @_;
 
-    # check needed stuff
-    for my $Needed (qw(MailHost FQDN)) {
-        if ( !$Param{$Needed} ) {
-            $Kernel::OM->Get('Kernel::System::Log')->Log(
-                Priority => 'error',
-                Message  => "Need $Needed!"
-            );
-            return;
-        }
-    }
-
-    # Remove a possible port from the FQDN value
-    my $FQDN = $Param{FQDN};
-    $FQDN =~ s{:\d+}{}smx;
-
-    # set up connection connection
-    my $SMTP = Net::SMTP->new(
-        $Param{MailHost},
-        Hello   => $FQDN,
-        Port    => $Param{SMTPPort} || 587,
-        Timeout => 30,
-        Debug   => $Param{SMTPDebug},
-    );
-
+    $Param{SMTPPort} ||= 587;
+    my $SMTP = $Self->SUPER::_Connect(%Param);
     return if !$SMTP;
 
-    $SMTP->starttls(
-        SSL_verify_mode => 0,
-    );
+    my $SSLVerifyMode = $Kernel::OM->Get('Kernel::Config')->Get('SendmailModule::SSLVerifyMode')
+        // IO::Socket::SSL::SSL_VERIFY_NONE();
+
+    # A failed STARTTLS must never continue with authentication or message data in cleartext.
+    if ( !$SMTP->starttls( SSL_verify_mode => $SSLVerifyMode ) ) {
+        $SMTP->quit();
+        return;
+    }
 
     return $SMTP;
 }

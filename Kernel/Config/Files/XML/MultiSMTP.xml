@@ -60,7 +60,7 @@
         </Value>
     </Setting>
     <Setting Name="MultiSMTP::Fallback" Required="1" Valid="1">
-        <Description Translatable="1">The fallback mechanism when MultiSMTP fails.</Description>
+        <Description Translatable="1">SMTP transport used when no active account matches the sender. A failed delivery through a matching account is not retried through the fallback.</Description>
         <Navigation>MultiSMTP::Core</Navigation>
         <Value>
             <Item ValueType="PerlModule" ValueFilter="Kernel/System/Email/SMTP*.pm">Kernel::System::Email::SMTP</Item>
@@ -88,7 +88,7 @@
         </Value>
     </Setting>
     <Setting Name="MultiSMTP::UseSenderFromMail" Required="1" Valid="1">
-        <Description Translatable="1">Always use 'From' given in the mail.</Description>
+        <Description Translatable="1">Select the SMTP account from the From header instead of the envelope sender. The envelope sender is preserved.</Description>
         <Navigation>MultiSMTP::Core</Navigation>
         <Value>
             <Item ValueType="Select" SelectedID="0">

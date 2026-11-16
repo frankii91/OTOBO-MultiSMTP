@@ -18,8 +18,10 @@ package Kernel::System::Email::MultiSMTP;
 use strict;
 use warnings;
 
-use Kernel::System::EmailParser;
+use Email::Address::XS ();
 our @ObjectDependencies = qw(
+    Kernel::Config
+    Kernel::System::Log
     Kernel::System::MultiSMTP
     Kernel::System::Email::SMTP
     Kernel::System::Email::SMTPS
@@ -43,7 +45,8 @@ sub new {
 }
 
 sub Check {
-    return (Successful => 1, MultiSMTP => shift );
+    # The sending address, and therefore the SMTP account, is only known at Send().
+    return ( Success => 1 );
 }
 
 sub Send {
@@ -60,7 +63,7 @@ sub Send {
                 Priority => 'error',
                 Message  => "Need $Needed!",
             );
-            return;
+            return { Success => 0, ErrorMessage => "Need $Needed!" };
         }
     }
 
@@ -73,15 +76,15 @@ sub Send {
 
     my $UseSenderFromMail = $ConfigObject->Get('MultiSMTP::UseSenderFromMail');
 
-    # try to parse the sender address from header
+    my $Sender = $Param{From};
+
+    # Select the account independently of the SMTP envelope (which may be empty for bounces).
     if ( !$Param{From} || $UseSenderFromMail ) {
-        ($Param{From}) = ${ $Param{Header} } =~ m{
-            ^ From: \s+
-                (
-                    (?:[^\n]+ )
-                    (?: \n ^ \s+ [^\n]+ )*
-                )
-        }xms;
+        my @FromHeaders = ${ $Param{Header} } =~ m{^From:[\t ]*([^\r\n]*(?:\r?\n[\t ]+[^\r\n]*)*)}gmi;
+        return { Success => 0, ErrorMessage => 'Expected exactly one From header.' }
+            if @FromHeaders != 1;
+        $Sender = $FromHeaders[0];
+        $Sender =~ s/\r?\n[\t ]+/ /g;
     }
 
     if ( $Self->{Debug} ) {
@@ -92,15 +95,18 @@ sub Send {
     }
 
     my $ErrorMessage = 'Error preparing to send message';
-    if ( $Param{From} ) {
-        my $ParserObject = Kernel::System::EmailParser->new(
-            Mode  => 'Standalone',
-            Debug => 0,
-        );
+    if ( $Sender ) {
+        my @Addresses = Email::Address::XS->parse($Sender);
+        return { Success => 0, ErrorMessage => 'Expected one valid sender address.' }
+            if @Addresses != 1 || !$Addresses[0]->is_valid;
+        my $PlainFrom = $Addresses[0]->address;
 
-        my $PlainFrom = $ParserObject->GetEmailAddress(
-            Email => $Param{From},
-        );
+        if ( defined $Param{From} && length $Param{From} ) {
+            my @Envelope = Email::Address::XS->parse( $Param{From} );
+            return { Success => 0, ErrorMessage => 'Invalid envelope sender.' }
+                if @Envelope != 1 || !$Envelope[0]->is_valid;
+            $Param{From} = $Envelope[0]->address;
+        }
 
         my %SMTP = $MSMTPObject->SMTPGetForAddress(
             Address => $PlainFrom,
@@ -116,7 +122,8 @@ sub Send {
 
         if ( %SMTP ) {
             $SMTP{Password} = $SMTP{PasswordDecrypted};
-            $SMTP{Type} =~ s/\W//g;
+            return { Success => 0, ErrorMessage => 'Invalid SMTP transport.' }
+                if ( $SMTP{Type} // '' ) !~ /\A(?:SMTP|SMTPS|SMTPTLS)\z/;
 
             if ( $Self->{Debug} && $Self->{Debug} == 2 ) {
                 $LogObject->Log(
@@ -128,25 +135,8 @@ sub Send {
             }
 
             my $Module = 'Kernel::System::Email::MultiSMTP::' . $SMTP{Type};
-            $Kernel::OM->ObjectParamAdd(
-                $Module => \%SMTP,
-            );
-
-            my $SMTPObject  = $Kernel::OM->Get($Module);
-
-            if ($SMTPObject->{User} ne $SMTP{User}) {
-                if ( $Self->{Debug} ) {
-                    $LogObject->Log(
-                        Priority => 'debug',
-                        Message  => "Set new SMTP-Server Information",
-                    );
-                }
-
-                $SMTPObject->{MailHost} = $SMTP{Host};
-                $SMTPObject->{SMTPPort} = $SMTP{Port};
-                $SMTPObject->{User}     = $SMTP{User};
-                $SMTPObject->{Password} = $SMTP{Password};
-            }
+            # Never reuse a transport holding another account's credentials or OAuth token.
+            my $SMTPObject = $Kernel::OM->Create( $Module, ObjectParams => \%SMTP );
 
             if ( $Self->{Debug} ) {
                 $LogObject->Log(
@@ -160,7 +150,8 @@ sub Send {
                 );
             }
 
-            return if !$SMTPObject;
+            return { Success => 0, ErrorMessage => 'Could not create SMTP transport.' }
+                if !$SMTPObject;
 
             my $Success = $SMTPObject->Send( %Param );
 
@@ -174,19 +165,30 @@ sub Send {
         $ErrorMessage .= ': param From empty';
     }
 
-    my $UseFallback = $ConfigObject->Get('MultiSMTP::UseFallback') || 1;
+    my $UseFallback = $ConfigObject->Get('MultiSMTP::UseFallback') // 1;
 
     if($UseFallback){
         # use standard SMTP module as fallback
         my $Module  = $ConfigObject->Get('MultiSMTP::Fallback');
-        return $Kernel::OM->Get( $Module )->Send( %Param );
+        return { Success => 0, ErrorMessage => 'Invalid fallback SMTP transport.' }
+            if ( $Module // '' ) !~ /\AKernel::System::Email::(?:SMTP|SMTPS|SMTPTLS)\z/;
+        my ($Type) = $Module =~ /::(SMTP|SMTPS|SMTPTLS)\z/;
+        my $Fallback = $Kernel::OM->Create(
+            'Kernel::System::Email::MultiSMTP::' . $Type,
+            ObjectParams => {
+                Host                    => $ConfigObject->Get('SendmailModule::Host'),
+                Port                    => $ConfigObject->Get('SendmailModule::Port'),
+                User                    => $ConfigObject->Get('SendmailModule::AuthUser'),
+                Password                => $ConfigObject->Get('SendmailModule::AuthPassword'),
+                AuthMethod              => $ConfigObject->Get('SendmailModule::OAuth2Method'),
+                OAuth2FunctionalAccount => $ConfigObject->Get('SendmailModule::OAuth2FunctionalAccount'),
+            },
+        );
+        return $Fallback->Send(%Param);
     }
     else
     {
-        return (
-            Successful => 0,
-            Message    => $ErrorMessage
-        );
+        return { Success => 0, ErrorMessage => $ErrorMessage };
     }
 
 }

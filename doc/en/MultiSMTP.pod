@@ -4,13 +4,18 @@ MultiSMTP - make OTOBO aware of multiple SMTP servers
 
 =head1 DESCRIPTION
 
-A standard OTOBO installation is not able to use different SMTP servers for each sender address. This can lead to problems as many recipient servers deny to deliver the mails as a reverse lookup does not respond the hostname of the sender address.
+MultiSMTP assigns outgoing SMTP accounts to sender addresses in OTOBO 11.1.
+Queues using different system addresses can therefore use different SMTP
+servers and credentials. Incoming mail account settings are independent.
 
-So each sender address needs its own SMTP server - and this is provided with this package.
+The administration screen provides SMTP, SMTPS and STARTTLS profiles, with
+Basic, anonymous, XOAUTH2 or OAUTHBEARER authentication. OAuth profiles use
+existing OTOBO functional accounts and the native token provider.
 
-After installation, there is a new item in the Email block in the admin area. That is to manage the address -> SMTP server mapping. You can configure the settings for each address given in the system addresses. And you can define the type of SMTP connection (plain SMTP, SMTPTLS or SMTP/S). The user's password can be stored in an encrypted way - if you want to use this feature, you have to install the Perl modules C<Crypt::CBC> and C<Crypt::DES>.
-
-When a mail is sent, the package searches for the SMTP settings that belong to the sender address and if it can't find anything, it uses the SMTP settings from I<SysConfig> (that is used by the standard SMTP mechanism).
+After installing the package, configure the profiles and set C<SendmailModule>
+to C<Kernel::System::Email::MultiSMTP> in System Configuration. See the
+repository README for configuration options, build commands, regression tests,
+and the disposition of historical upstream issues.
 
 =head1 AUTHOR AND LICENSE
 

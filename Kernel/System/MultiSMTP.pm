@@ -26,6 +26,7 @@ our @ObjectDependencies = (
     'Kernel::System::Encode',
     'Kernel::System::Log',
     'Kernel::System::Main',
+    'Kernel::System::OpenIDConnect::FunctionalAccounts',
     'Kernel::System::Time',
     'Kernel::System::User',
     'Kernel::System::Valid',
@@ -74,6 +75,119 @@ sub new {
     return $Self;
 }
 
+=item SMTPValidate()
+
+validates data before creating or changing an SMTP account
+
+=cut
+
+sub SMTPValidate {
+    my ( $Self, %Param ) = @_;
+
+    my %Errors;
+    my %AllowedType = map { $_ => 1 } qw(SMTP SMTPS SMTPTLS);
+    my %AllowedAuth = map { $_ => 1 } qw(Basic XOAUTH2 OAUTHBEARER);
+
+    $Param{AuthMethod} ||= 'Basic';
+    my $PasswordRequired = defined $Param{PasswordRequired} ? $Param{PasswordRequired} : 1;
+
+    $Errors{Host} = 1 if !defined $Param{Host} || $Param{Host} !~ /\S/;
+    $Errors{Type} = 1 if !$AllowedType{ $Param{Type} // '' };
+    $Errors{AuthMethod} = 1 if !$AllowedAuth{ $Param{AuthMethod} };
+    $Errors{Port} = 1 if !defined $Param{Port} || $Param{Port} !~ /\A\d+\z/ || $Param{Port} < 1 || $Param{Port} > 65535;
+    $Errors{ValidID} = 1 if !$Param{ValidID} || !$Kernel::OM->Get('Kernel::System::Valid')->ValidLookup(
+        ValidID => $Param{ValidID},
+    );
+    $Errors{UserID} = 1 if !defined $Param{UserID} || $Param{UserID} !~ /\A\d+\z/ || !$Param{UserID};
+    $Errors{ID} = 1 if defined $Param{ID} && $Param{ID} ne '' && ( $Param{ID} !~ /\A\d+\z/ || !$Param{ID} );
+
+    if ( $AllowedAuth{ $Param{AuthMethod} } ) {
+        if ( $Param{AuthMethod} eq 'Basic' ) {
+            if ( !$Param{Anonymous} ) {
+                $Errors{User} = 1 if !defined $Param{User} || $Param{User} !~ /\S/;
+                $Errors{Password} = 1
+                    if $PasswordRequired && ( !defined $Param{Password} || $Param{Password} eq '' );
+            }
+        }
+        else {
+            $Errors{Anonymous} = 1 if $Param{Anonymous};
+            $Errors{User} = 1 if !defined $Param{User} || $Param{User} !~ /\S/;
+            if ( !defined $Param{OAuth2FunctionalAccount} || $Param{OAuth2FunctionalAccount} !~ /\S/ ) {
+                $Errors{OAuth2FunctionalAccount} = 1;
+            }
+            elsif ( !$Kernel::OM->Get('Kernel::System::OpenIDConnect::FunctionalAccounts')->GetAccount(
+                Name => $Param{OAuth2FunctionalAccount},
+            ) ) {
+                $Errors{OAuth2FunctionalAccount} = 1;
+            }
+        }
+    }
+
+    my $Emails = ref $Param{Emails} eq 'ARRAY' ? $Param{Emails} : [ defined $Param{Emails} ? $Param{Emails} : () ];
+    my %Seen;
+    if ( !@$Emails ) {
+        $Errors{Emails} = 1;
+    }
+    else {
+        for my $Address (@$Emails) {
+            if ( !defined $Address || $Address !~ /\S/ || $Seen{ lc $Address }++ ) {
+                $Errors{Emails} = 1;
+                last;
+            }
+        }
+        $Errors{Emails} = 1 if !$Errors{Emails} && !$Self->_SMTPAddressMappingsUnique(
+            Emails => $Emails,
+            ID     => $Param{ID},
+        );
+    }
+
+    return \%Errors;
+}
+
+sub _SMTPAddressMappingsUnique {
+    my ( $Self, %Param ) = @_;
+
+    my $DBObject = $Kernel::OM->Get('Kernel::System::DB');
+
+    for my $Address ( @{ $Param{Emails} } ) {
+        my $SQL = 'SELECT smtp_id FROM ps_multi_smtp_address WHERE LOWER(address) = LOWER(?)';
+        my @Bind = ( \$Address );
+        if ( $Param{ID} ) {
+            $SQL .= ' AND smtp_id <> ?';
+            push @Bind, \$Param{ID};
+        }
+
+        return if !$DBObject->Prepare(
+            SQL   => $SQL,
+            Bind  => \@Bind,
+            Limit => 1,
+        );
+
+        return if $DBObject->FetchrowArray();
+    }
+
+    return 1;
+}
+
+sub _SMTPInsertID {
+    my ( $Self ) = @_;
+
+    my $DBObject = $Kernel::OM->Get('Kernel::System::DB');
+    my %SQL = (
+        mysql      => 'SELECT LAST_INSERT_ID()',
+        postgresql => "SELECT currval(pg_get_serial_sequence('ps_multi_smtp', 'id'))",
+        oracle     => 'SELECT SE_PS_MULTI_SMTP.currval FROM dual',
+        mssql      => 'SELECT SCOPE_IDENTITY()',
+        db2        => 'VALUES IDENTITY_VAL_LOCAL()',
+    );
+    my $SQL = $SQL{ $DBObject->GetDatabaseFunction('Type') // '' };
+
+    return if !$SQL || !$DBObject->Prepare( SQL => $SQL );
+
+    my ($ID) = $DBObject->FetchrowArray();
+    return $ID;
+}
+
 =item SMTPAdd()
 
 to add a news 
@@ -95,35 +209,37 @@ to add a news
 sub SMTPAdd {
     my ( $Self, %Param ) = @_;
 
-    my @NeededFields = qw(User Password Emails Type ValidID UserID Port Host);
-
     my $LogObject = $Kernel::OM->Get('Kernel::System::Log');
     my $DBObject  = $Kernel::OM->Get('Kernel::System::DB');
 
-    # remove user and password from needed fields when this is an anonymous account
+    delete $Param{ID};
     if ( $Param{Anonymous} ) {
-        $Param{User} = '';
+        $Param{User}     = '';
         $Param{Password} = '';
-
-        splice @NeededFields, 0, 2;
     }
 
-    # check needed stuff
-    for my $Needed (@NeededFields) {
-        if ( !$Param{$Needed} ) {
-            $LogObject->Log(
-                Priority => 'error',
-                Message  => "Need $Needed!",
-            );
-            return;
-        }
+    $Param{AuthMethod} ||= 'Basic';
+    $Param{Emails} = ref $Param{Emails} eq 'ARRAY' ? $Param{Emails} : [ defined $Param{Emails} ? $Param{Emails} : () ];
+    my $Errors = $Self->SMTPValidate(%Param);
+    if ( %$Errors ) {
+        $LogObject->Log(
+            Priority => 'error',
+            Message  => 'Invalid SMTP account data: ' . join( ', ', sort keys %$Errors ),
+        );
+        return;
     }
 
-    if ( ref $Param{Emails} ne 'ARRAY' ) {
-        $Param{Emails} = [ $Param{Emails} ],
+    my $OAuth2FunctionalAccountID;
+    my $Encrypted = 0;
+    if ( $Param{AuthMethod} ne 'Basic' ) {
+        my $OAuth2FunctionalAccount = $Kernel::OM->Get('Kernel::System::OpenIDConnect::FunctionalAccounts')->GetAccount(
+            Name => $Param{OAuth2FunctionalAccount},
+        );
+        $OAuth2FunctionalAccountID = $OAuth2FunctionalAccount->{AccountID};
+        $Param{Password}          = '';
     }
-
-    if ( $Self->{UseEncryption} ) {
+    elsif ( $Self->{UseEncryption} ) {
+        $Encrypted = 1;
         my $Cipher = Crypt::CBC->new(
             -key    => $Self->{EncryptionKey},
             -cipher => $Self->{EncryptionModule},
@@ -137,33 +253,26 @@ sub SMTPAdd {
     return if !$DBObject->Do(
         SQL => 'INSERT INTO ps_multi_smtp '
             . '(host, smtp_user, smtp_password, encrypted, type, create_time, create_by, '
-            . ' valid_id, change_time, change_by, port, comments) '
-            . 'VALUES (?, ?, ?, ?, ?, current_timestamp, ?, ?, current_timestamp, ?, ?, ?)',
+            . ' valid_id, change_time, change_by, port, comments, auth_method, oauth2_functional_account_id) '
+            . 'VALUES (?, ?, ?, ?, ?, current_timestamp, ?, ?, current_timestamp, ?, ?, ?, ?, ?)',
         Bind => [
             \$Param{Host},
             \$Param{User},
             \$Param{Password},
-            \$Self->{UseEncryption},
+            \$Encrypted,
             \$Param{Type},
             \$Param{UserID},
             \$Param{ValidID},
             \$Param{UserID},
             \$Param{Port},
             \$Param{Comments},
+            \$Param{AuthMethod},
+            \$OAuth2FunctionalAccountID,
         ],
     );
 
-    # get new invoice id
-    return if !$DBObject->Prepare(
-        SQL   => 'SELECT MAX(id) FROM ps_multi_smtp WHERE host = ? AND smtp_user = ?',
-        Bind  => [ \$Param{Host}, \$Param{User} ],
-        Limit => 1,
-    );
-
-    my $ID;
-    while ( my @Row = $DBObject->FetchrowArray() ) {
-        $ID = $Row[0];
-    }
+    my $ID = $Self->_SMTPInsertID();
+    return if !$ID;
 
     # log notice
     $LogObject->Log(
@@ -172,12 +281,15 @@ sub SMTPAdd {
     );
 
     # add mail addresses
-    my $SQLMails = 'INSERT INTO ps_multi_smtp_address (smtp_id, address) VALUES (?,?)';
+    my $SQLMails = 'INSERT INTO ps_multi_smtp_address (smtp_id, address) VALUES (?, ?)';
     for my $Address ( @{ $Param{Emails} } ) {
-        $DBObject->Do(
+        if ( !$DBObject->Do(
             SQL => $SQLMails,
             Bind => [ \$ID, \$Address ],
-        );
+        ) ) {
+            $Self->SMTPDelete( ID => $ID );
+            return;
+        }
     }
 
     return $ID;
@@ -209,32 +321,57 @@ sub SMTPUpdate {
     my $LogObject = $Kernel::OM->Get('Kernel::System::Log');
     my $DBObject  = $Kernel::OM->Get('Kernel::System::DB');
 
-    my @NeededFields = qw(User Password Emails Type ValidID UserID Port Host);
+    return if !$Param{ID};
+    my %Existing = $Self->SMTPGet( ID => $Param{ID} );
+    return if !%Existing;
+    $Existing{AuthMethod} ||= 'Basic';
 
-    # remove user and password from needed fields when this is an anonymous account
+    $Param{AuthMethod} ||= $Existing{AuthMethod};
+    $Param{Emails} = ref $Param{Emails} eq 'ARRAY' ? $Param{Emails} : [ defined $Param{Emails} ? $Param{Emails} : () ];
     if ( $Param{Anonymous} ) {
-        $Param{User} = '';
+        $Param{User}     = '';
         $Param{Password} = '';
-
-        splice @NeededFields, 0, 2;
     }
 
-    # check needed stuff
-    for my $Needed (@NeededFields) {
-        if ( !$Param{$Needed} ) {
-            $LogObject->Log(
-                Priority => 'error',
-                Message  => "Need $Needed!",
-            );
-            return;
-        }
+    $Param{PasswordRequired} = 1;
+    if (
+        $Param{AuthMethod} eq 'Basic'
+        && !$Param{Anonymous}
+        && $Existing{AuthMethod} eq 'Basic'
+        && defined $Existing{User}
+        && $Existing{User} =~ /\S/
+        && defined $Existing{PasswordDecrypted}
+        && $Existing{PasswordDecrypted} ne ''
+        && ( !defined $Param{Password} || $Param{Password} eq '' )
+        )
+    {
+        $Param{PasswordRequired} = 0;
     }
 
-    if ( ref $Param{Emails} ne 'ARRAY' ) {
-        $Param{Emails} = [ $Param{Emails} ],
+    my $Errors = $Self->SMTPValidate(%Param);
+    if ( %$Errors ) {
+        $LogObject->Log(
+            Priority => 'error',
+            Message  => 'Invalid SMTP account data: ' . join( ', ', sort keys %$Errors ),
+        );
+        return;
     }
 
-    if ( $Self->{UseEncryption} ) {
+    my $OAuth2FunctionalAccountID;
+    my $Encrypted = 0;
+    if ( $Param{AuthMethod} ne 'Basic' ) {
+        my $OAuth2FunctionalAccount = $Kernel::OM->Get('Kernel::System::OpenIDConnect::FunctionalAccounts')->GetAccount(
+            Name => $Param{OAuth2FunctionalAccount},
+        );
+        $OAuth2FunctionalAccountID = $OAuth2FunctionalAccount->{AccountID};
+        $Param{Password}           = '';
+    }
+    elsif ( !$Param{Anonymous} && ( !defined $Param{Password} || $Param{Password} eq '' ) ) {
+        $Param{Password} = $Existing{Password};
+        $Encrypted       = $Existing{Encrypted};
+    }
+    elsif ( $Self->{UseEncryption} ) {
+        $Encrypted = 1;
         my $Cipher = Crypt::CBC->new(
             -key    => $Self->{EncryptionKey},
             -cipher => $Self->{EncryptionModule},
@@ -244,11 +381,66 @@ sub SMTPUpdate {
         $Param{Password} = $Cipher->encrypt_hex( $Param{Password} );
     }
 
-    # insert new news
-    return if !$DBObject->Do(
+    my %ExistingAddresses;
+    return if !$DBObject->Prepare(
+        SQL  => 'SELECT address FROM ps_multi_smtp_address WHERE smtp_id = ?',
+        Bind => [ \$Param{ID} ],
+    );
+    while ( my @Row = $DBObject->FetchrowArray() ) {
+        $ExistingAddresses{ lc $Row[0] } = $Row[0];
+    }
+
+    my $DBHandle        = $DBObject->{dbh};
+    my $OwnTransaction  = $DBHandle->{AutoCommit};
+    my $DBType          = $DBObject->GetDatabaseFunction('Type') // '';
+    my %SavepointSQL = (
+        mysql      => [ 'SAVEPOINT MultiSMTPUpdate', 'ROLLBACK TO SAVEPOINT MultiSMTPUpdate', 'RELEASE SAVEPOINT MultiSMTPUpdate' ],
+        postgresql => [ 'SAVEPOINT MultiSMTPUpdate', 'ROLLBACK TO SAVEPOINT MultiSMTPUpdate', 'RELEASE SAVEPOINT MultiSMTPUpdate' ],
+        oracle     => [ 'SAVEPOINT MultiSMTPUpdate', 'ROLLBACK TO MultiSMTPUpdate', undef ],
+        mssql      => [ 'SAVE TRANSACTION MultiSMTPUpdate', 'ROLLBACK TRANSACTION MultiSMTPUpdate', undef ],
+        db2        => [ 'SAVEPOINT MultiSMTPUpdate ON ROLLBACK RETAIN CURSORS', 'ROLLBACK TO SAVEPOINT MultiSMTPUpdate', 'RELEASE SAVEPOINT MultiSMTPUpdate' ],
+    );
+    my $Savepoint = $SavepointSQL{$DBType};
+
+    if ($OwnTransaction) {
+        return if !$DBObject->BeginWork();
+    }
+    else {
+        return if !$Savepoint || !$DBObject->Do( SQL => $Savepoint->[0] );
+    }
+
+    my $Rollback = sub {
+        my $Success = $OwnTransaction
+            ? $DBObject->Rollback()
+            : $DBObject->Do( SQL => $Savepoint->[1] );
+
+        if ( !$Success ) {
+            $LogObject->Log(
+                Priority => 'error',
+                Message  => 'Unable to roll back SMTP account update.',
+            );
+        }
+        if ( !$OwnTransaction && $Savepoint->[2] ) {
+            $DBObject->Do( SQL => $Savepoint->[2] );
+        }
+    };
+
+    for my $Address ( @{ $Param{Emails} } ) {
+        next if $ExistingAddresses{ lc $Address };
+
+        if ( !$DBObject->Do(
+            SQL  => 'INSERT INTO ps_multi_smtp_address (smtp_id, address) VALUES (?, ?)',
+            Bind => [ \$Param{ID}, \$Address ],
+        ) ) {
+            $Rollback->();
+            return;
+        }
+    }
+
+    if ( !$DBObject->Do(
         SQL => 'UPDATE ps_multi_smtp SET host = ?, smtp_user = ?, smtp_password = ?, type = ?, port = ?, '
             . 'encrypted = ?, valid_id = ?, change_time = current_timestamp, change_by = ?, '
-            . 'comments = ? '
+            . 'comments = ?, auth_method = ?, oauth2_functional_account_id = ? '
             . 'WHERE id = ?',
         Bind => [
             \$Param{Host},
@@ -256,26 +448,35 @@ sub SMTPUpdate {
             \$Param{Password},
             \$Param{Type},
             \$Param{Port},
-            \$Self->{UseEncryption},
+            \$Encrypted,
             \$Param{ValidID},
             \$Param{UserID},
             \$Param{Comments},
+            \$Param{AuthMethod},
+            \$OAuth2FunctionalAccountID,
             \$Param{ID},
         ],
-    );
+    ) ) {
+        $Rollback->();
+        return;
+    }
 
-    $DBObject->Do(
-        SQL  => 'DELETE FROM ps_multi_smtp_address WHERE smtp_id = ?',
-        Bind => [ \$Param{ID} ],
-    );
+    my $EmailPlaceholders = join ', ', map { 'LOWER(?)' } @{ $Param{Emails} };
+    my @DeleteBind        = ( \$Param{ID}, map { \$_ } @{ $Param{Emails} } );
+    if ( !$DBObject->Do(
+        SQL  => 'DELETE FROM ps_multi_smtp_address WHERE smtp_id = ? AND LOWER(address) NOT IN (' . $EmailPlaceholders . ')',
+        Bind => \@DeleteBind,
+    ) ) {
+        $Rollback->();
+        return;
+    }
 
-    # add mail addresses
-    my $SQLMails = 'INSERT INTO ps_multi_smtp_address (smtp_id, address) VALUES (?,?)';
-    for my $Address ( @{ $Param{Emails} } ) {
-        $DBObject->Do(
-            SQL => $SQLMails,
-            Bind => [ \$Param{ID}, \$Address ],
-        );
+    my $CommitSuccess = $OwnTransaction
+        ? $DBHandle->commit()
+        : ( !$Savepoint->[2] || $DBObject->Do( SQL => $Savepoint->[2] ) );
+    if ( !$CommitSuccess ) {
+        $Rollback->();
+        return;
     }
 
     return 1;
@@ -323,10 +524,13 @@ sub SMTPGet {
 
     # sql
     return if !$DBObject->Prepare(
-        SQL => 'SELECT ps_multi_smtp.id, host, smtp_user, smtp_password, type, address, encrypted, '
-            . 'change_time, change_by, create_time, create_by, valid_id, port, comments '
-            . 'FROM ps_multi_smtp INNER JOIN ps_multi_smtp_address ON ps_multi_smtp.id = smtp_id '
-            . 'WHERE ps_multi_smtp.id = ?',
+        SQL => 'SELECT smtp.id, smtp.host, smtp.smtp_user, smtp.smtp_password, smtp.type, smtp_address.address, smtp.encrypted, '
+            . 'smtp.change_time, smtp.change_by, smtp.create_time, smtp.create_by, smtp.valid_id, smtp.port, smtp.comments, '
+            . 'smtp.auth_method, functional_account.name '
+            . 'FROM ps_multi_smtp smtp '
+            . 'LEFT JOIN ps_multi_smtp_address smtp_address ON smtp.id = smtp_address.smtp_id '
+            . 'LEFT JOIN oidc_functional_accounts functional_account ON smtp.oauth2_functional_account_id = functional_account.id '
+            . 'WHERE smtp.id = ? ORDER BY smtp_address.id',
         Bind  => [ \$Param{ID} ],
     );
 
@@ -345,14 +549,17 @@ sub SMTPGet {
         $SMTP{ValidID}    = $Data[11];
         $SMTP{Port}       = $Data[12];
         $SMTP{Comments}   = $Data[13];
+        $SMTP{AuthMethod} = $Data[14] || 'Basic';
+        $SMTP{OAuth2FunctionalAccount} = $Data[15];
 
-        push @{ $SMTP{Emails} }, $Data[5];
+        push @{ $SMTP{Emails} }, $Data[5] if defined $Data[5];
     }
 
     my $UserObject  = $Kernel::OM->Get('Kernel::System::User');
     my $ValidObject = $Kernel::OM->Get('Kernel::System::Valid');
 
     if ( %SMTP ) {
+        $SMTP{Emails} ||= [];
         $SMTP{Valid}   = $ValidObject->ValidLookup( ValidID => $SMTP{ValidID} );
         $SMTP{Creator} = $UserObject->UserLookup( UserID => $SMTP{CreateBy} );
         $SMTP{Changer} = $UserObject->UserLookup( UserID => $SMTP{ChangeBy} );
@@ -485,15 +692,19 @@ sub SMTPGetForAddress {
     my $ValidWhere = '';
     my @ValidBind;
     if ( $Param{Valid} ) {
-        $ValidWhere = ' AND valid_id = ?';
+        $ValidWhere = ' AND smtp.valid_id = ?';
         push @ValidBind, \"1";
     }
 
     return if !$DBObject->Prepare(
-        SQL => 'SELECT ps_multi_smtp.id, host, smtp_user, smtp_password, type, address, encrypted, '
-            . 'change_time, change_by, create_time, create_by, valid_id, port, comments '
-            . 'FROM ps_multi_smtp INNER JOIN ps_multi_smtp_address ON ps_multi_smtp.id = smtp_id '
-            . 'WHERE address = ?' . $ValidWhere,
+        SQL => 'SELECT smtp.id, smtp.host, smtp.smtp_user, smtp.smtp_password, smtp.type, smtp_address.address, smtp.encrypted, '
+            . 'smtp.change_time, smtp.change_by, smtp.create_time, smtp.create_by, smtp.valid_id, smtp.port, smtp.comments, '
+            . 'smtp.auth_method, functional_account.name '
+            . 'FROM ps_multi_smtp smtp '
+            . 'INNER JOIN ps_multi_smtp_address smtp_address ON smtp.id = smtp_address.smtp_id '
+            . 'LEFT JOIN oidc_functional_accounts functional_account ON smtp.oauth2_functional_account_id = functional_account.id '
+            . 'WHERE LOWER(smtp_address.address) = LOWER(?)' . $ValidWhere
+            . ' ORDER BY smtp.id ASC, smtp_address.id ASC',
         Bind  => [ \$Param{Address}, @ValidBind ],
         Limit => 1,
     );
@@ -501,21 +712,24 @@ sub SMTPGetForAddress {
     my %SMTP;
     while ( my @Data = $DBObject->FetchrowArray() ) {
         %SMTP = (
-            ID         => $Data[0],
-            Host       => $Data[1], 
-            User       => $Data[2],
-            Password   => $Data[3],
-            Type       => $Data[4],
-            Email      => $Data[5],
-            Encrypted  => $Data[6],
-            ChangeTime => $Data[7],
-            ChangeBy   => $Data[8],
-            CreateTime => $Data[9],
-            CreateBy   => $Data[10],
-            ValidID    => $Data[11],
-            Port       => $Data[12],
-            Comments   => $Data[13],
+            ID                       => $Data[0],
+            Host                     => $Data[1],
+            User                     => $Data[2],
+            Password                 => $Data[3],
+            Type                     => $Data[4],
+            Email                    => $Data[5],
+            Encrypted                => $Data[6],
+            ChangeTime               => $Data[7],
+            ChangeBy                 => $Data[8],
+            CreateTime               => $Data[9],
+            CreateBy                 => $Data[10],
+            ValidID                  => $Data[11],
+            Port                     => $Data[12],
+            Comments                 => $Data[13],
+            AuthMethod               => $Data[14] || 'Basic',
+            OAuth2FunctionalAccount => $Data[15],
         );
+        last;
     }
 
     if ( %SMTP ) {
