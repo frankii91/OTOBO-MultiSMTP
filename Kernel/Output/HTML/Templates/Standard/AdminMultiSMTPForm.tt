@@ -1,5 +1,9 @@
 <div class="MainBox ARIARoleMain LayoutFixedSidebar SidebarFirst">
-    <h1>[% Translate("SMTP Management") | html %]</h1>
+    <h1 class="InvisibleText">[% Translate("SMTP Management") | html %]</h1>
+    [% BreadcrumbPath = [ { Name => Translate('SMTP Management'), Link => Env("Action") },
+        { Name => Translate('Add/Change SMTP') } ] %]
+    [% INCLUDE "Breadcrumb.tt" Path = BreadcrumbPath %]
+    <div class="Clear"></div>
     <div class="SidebarColumn">
         <div class="WidgetSimple">
             <div class="Header">
@@ -58,7 +62,7 @@
                             <div id="UserServerError" class="TooltipErrorMessage"><p>[% Translate("This field is required.") | html %]</p></div>
                         </div><div class="Clear"></div>
 
-                        <div id="OAuth2FunctionalAccountField">
+                        <div id="OAuth2FunctionalAccountField" class="Row">
                             <label for="OAuth2FunctionalAccount" class="Mandatory"><span class="Marker">*</span>[% Translate("OAuth functional account") | html %]:</label>
                             <div class="Field">
                                 [% Data.OAuth2FunctionalAccountSelect %]
@@ -66,17 +70,17 @@
                             </div><div class="Clear"></div>
                         </div>
 
-                        <div id="AnonymousField">
+                        <div id="AnonymousField" class="Row">
                             <label for="Anonymous">[% Translate("Anonymous SMTP") | html %]</label>
                             <div class="Field">
                                 <input type="checkbox" id="Anonymous" name="Anonymous" value="1" [% Data.AnonymousChecked %]/>
                             </div><div class="Clear"></div>
                         </div>
 
-                        <div id="PasswordField">
+                        <div id="PasswordField" class="Row">
                             <label for="PasswordDecrypted" id="PasswordLabel" class="Mandatory"><span id="PasswordMarker" class="Marker">*</span>[% Translate("Password") | html %]:</label>
                             <div class="Field">
-                                <input type="password" id="PasswordDecrypted" name="PasswordDecrypted" value="" autocomplete="new-password" placeholder="[% Data.PasswordPlaceholder | html %]" class="W75pc [% Data.PasswordRequired ? 'Validate_Required' : '' %] [% Data.PasswordInvalid | html %]" maxlength="250"/>
+                                <input type="password" id="PasswordDecrypted" name="PasswordDecrypted" value="" autocomplete="new-password" placeholder="[% Translate(Data.PasswordPlaceholder) | html %]" class="W75pc [% Data.PasswordRequired ? 'Validate_Required' : '' %] [% Data.PasswordInvalid | html %]" maxlength="250"/>
                                 <div id="PasswordServerError" class="TooltipErrorMessage"><p>[% Translate("A password is required for this account.") | html %]</p></div>
                             </div><div class="Clear"></div>
                         </div>
@@ -93,7 +97,7 @@
                         <label for="Comments">[% Translate("Comment") | html %]:</label>
                         <div class="Field"><input type="text" id="Comments" name="Comments" value="[% Data.Comments | html %]" class="W75pc" maxlength="250"/></div><div class="Clear"></div>
 
-                        <div class="Field">
+                        <div class="Field SpacingTop">
                             <button class="Primary CallForAction" type="submit"><span>[% Translate("Save") | html %]</span></button>
                             [% Translate("or") | html %]
                             <a href="[% Env("Baselink") %]Action=[% Env("Action") %]">[% Translate("Cancel") | html %]</a>

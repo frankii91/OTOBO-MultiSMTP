@@ -63,6 +63,9 @@ $Selenium->RunTest(
         $UserID = $Kernel::OM->Get('Kernel::System::User')->UserLookup(
             UserLogin => $TestUserLogin,
         );
+        $Kernel::OM->Get('Kernel::System::User')->SetPreferences(
+            UserID => $UserID, Key => 'UserLanguage', Value => 'pl',
+        );
 
         $OIDCProfileName = "__MultiSMTP_Selenium_Profile_$RunID";
         my $ProfileRepository = $Kernel::OM->Get('Kernel::System::OpenIDConnect::ProfileRepository');
@@ -126,6 +129,22 @@ $Selenium->RunTest(
         for my $ID (qw(Host Port Type AuthMethod User OAuth2FunctionalAccount Anonymous PasswordDecrypted Emails ValidID Comments)) {
             $Selenium->find_element( "#$ID", 'css' );
         }
+        my $CheckAlignment = sub {
+            my ($ID) = @_;
+            my $Aligned = $Selenium->execute_script(q{
+                const Input = document.getElementById(arguments[0]);
+                const Label = document.querySelector('label[for="' + arguments[0] + '"]');
+                const Host = document.getElementById('Host').closest('.Field');
+                return getComputedStyle(Label).float === 'left'
+                    && Math.abs(Input.closest('.Field').getBoundingClientRect().left
+                        - Host.getBoundingClientRect().left) <= 1;
+            }, $ID);
+            $Self->True( $Aligned, "$ID uses the native aligned label and field layout" );
+        };
+        for my $Width ( 1366, 1920 ) {
+            $Selenium->set_window_size( 1000, $Width );
+            $CheckAlignment->($_) for qw(Anonymous PasswordDecrypted);
+        }
         my $AuthMethods = $Selenium->execute_script(
             "return Array.from(document.querySelectorAll('#AuthMethod option')).map(Option => Option.value);"
         );
@@ -181,6 +200,12 @@ $Selenium->RunTest(
 
         $Selenium->VerifiedGet("${ScriptAlias}index.pl?Action=AdminMultiSMTP;Subaction=Edit;ID=$BasicProfile{ID}");
         $Self->Is( $Selenium->find_element( '#PasswordDecrypted', 'css' )->get_value(), '', 'edit never reveals the stored password' );
+        $Self->Is(
+            $Selenium->find_element( '#PasswordDecrypted', 'css' )->get_attribute('placeholder'),
+            'Pozostaw puste, aby zachować obecne hasło.',
+            'password preservation hint uses the agent language',
+        );
+        $Selenium->capture_screenshot("$ENV{MULTISMTP_SCREENSHOT_DIR}/form.png") if $ENV{MULTISMTP_SCREENSHOT_DIR};
         $Selenium->find_element( 'form.Validate button[type=submit]', 'css' )->VerifiedClick();
         %BasicProfile = $SMTPObject->SMTPGet( ID => $BasicProfile{ID} );
         $Self->Is( $BasicProfile{PasswordDecrypted}, $BasicPassword, 'blank password on edit preserves the stored password' );
@@ -208,6 +233,11 @@ $Selenium->RunTest(
         $Self->True( $AfterForgedDelete{ID}, 'rejected delete leaves the SMTP account intact' );
 
         $Selenium->VerifiedGet("${ScriptAlias}index.pl?Action=AdminMultiSMTP");
+        $Self->True(
+            $Selenium->execute_script(q{return document.querySelectorAll('form.DeleteSMTP button.CallForAction > span').length > 0;}),
+            'delete uses the native OTOBO button markup',
+        );
+        $Selenium->capture_screenshot("$ENV{MULTISMTP_SCREENSHOT_DIR}/list.png") if $ENV{MULTISMTP_SCREENSHOT_DIR};
         $Selenium->find_element(
             "//form[contains(concat(' ', normalize-space(\@class), ' '), ' DeleteSMTP ')][.//input[\@name='ID' and \@value='$BasicProfile{ID}']]//button"
         )->VerifiedClick();
@@ -229,6 +259,7 @@ $Selenium->RunTest(
         $Self->Is( $OAuthProfile{OAuth2FunctionalAccount}, $FunctionalAccountName, 'admin save stores the OAuth functional account' );
 
         $Selenium->VerifiedGet("${ScriptAlias}index.pl?Action=AdminMultiSMTP;Subaction=Edit;ID=$OAuthProfile{ID}");
+        $CheckAlignment->('OAuth2FunctionalAccount');
         $Self->Is( $Selenium->find_element( '#AuthMethod', 'css' )->get_value(), 'XOAUTH2', 'edit restores the stored OAuth method' );
         $Self->Is(
             $Selenium->find_element( '#OAuth2FunctionalAccount', 'css' )->get_value(),

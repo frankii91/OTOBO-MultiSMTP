@@ -2,7 +2,7 @@
 <otobo_package version="1.0">
     <!-- GENERATED WITH OPM::Maker::Command::sopm (1.1.0) -->
     <Name>MultiSMTP</Name>
-    <Version>11.1.0</Version>
+    <Version>11.1.1</Version>
     <Framework>11.1.x</Framework>
     <Vendor>Perl-Services.de</Vendor>
     <URL>https://www.perl-services.de</URL>
@@ -15,6 +15,7 @@
         <File Permission="644" Location="Kernel/Config/Files/XML/MultiSMTP.xml" />
         <File Permission="644" Location="Kernel/Language/de_MultiSMTP.pm" />
         <File Permission="644" Location="Kernel/Language/hu_MultiSMTP.pm" />
+        <File Permission="644" Location="Kernel/Language/pl_MultiSMTP.pm" />
         <File Permission="644" Location="Kernel/Language/ru_MultiSMTP.pm" />
         <File Permission="644" Location="Kernel/Language/zh_CN_MultiSMTP.pm" />
         <File Permission="644" Location="Kernel/Modules/AdminMultiSMTP.pm" />

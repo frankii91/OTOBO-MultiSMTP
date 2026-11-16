@@ -1,5 +1,8 @@
 <div class="MainBox ARIARoleMain LayoutFixedSidebar SidebarFirst">
-    <h1>[% Translate("SMTP Management") | html %]</h1>
+    <h1 class="InvisibleText">[% Translate("SMTP Management") | html %]</h1>
+    [% BreadcrumbPath = [ { Name => Translate('SMTP Management'), Link => Env("Action") } ] %]
+    [% INCLUDE "Breadcrumb.tt" Path = BreadcrumbPath %]
+    <div class="Clear"></div>
     <div class="SidebarColumn">
         <div class="WidgetSimple">
             <div class="Header"><h2>[% Translate("Actions") | html %]</h2></div>
@@ -29,7 +32,7 @@
                             <th>[% Translate("Date") | html %]</th>
                             <th>[% Translate("Creator") | html %]</th>
                             <th>[% Translate("Comment") | html %]</th>
-                            <th>[% Translate("Action") | html %]</th>
+                            <th>[% Translate("Delete") | html %]</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -39,24 +42,23 @@
 [% RenderBlockStart("SMTPRow") %]
                         <tr>
                             <td><a href="[% Env("Baselink") %]Action=AdminMultiSMTP;Subaction=Edit;ID=[% Data.ID | uri %]">[% Data.ID | html %]</a></td>
-                            <td>[% Data.Host | html %]</td>
+                            <td><a class="AsBlock" href="[% Env("Baselink") %]Action=AdminMultiSMTP;Subaction=Edit;ID=[% Data.ID | uri %]">[% Data.Host | html %]</a></td>
                             <td>[% Data.User | html %]</td>
                             <td>[% Data.Port | html %]</td>
                             <td>[% Data.EmailString | html %]</td>
                             <td>[% Data.Type | html %]</td>
                             <td>[% Data.AuthString | html %]</td>
                             <td>[% Translate(Data.Valid) | html %]</td>
-                            <td>[% Data.CreateTime | html %]</td>
+                            <td>[% Data.CreateTime | Localize("TimeShort") %]</td>
                             <td>[% Data.Creator | html %]</td>
-                            <td>[% Data.Comments | html %]</td>
-                            <td>
-                                <a href="[% Env("Baselink") %]Action=AdminMultiSMTP;Subaction=Edit;ID=[% Data.ID | uri %]">[% Translate("edit") | html %]</a>
+                            <td title="[% Data.Comments | html %]">[% Data.Comments | truncate(20) | html %]</td>
+                            <td class="Center">
                                 <form action="[% Env("CGIHandle") %]" method="post" class="DeleteSMTP">
                                     <input type="hidden" name="Action" value="[% Env("Action") %]"/>
                                     <input type="hidden" name="Subaction" value="Delete"/>
                                     <input type="hidden" name="ID" value="[% Data.ID | html %]"/>
                                     <input type="hidden" name="ChallengeToken" value="[% Env("UserChallengeToken") | html %]"/>
-                                    <button type="submit" class="AsBlock">[% Translate("delete") | html %]</button>
+                                    <button type="submit" class="CallForAction"><span>[% Translate("Delete") | html %]</span></button>
                                 </form>
                             </td>
                         </tr>

@@ -11,7 +11,7 @@ address also share its SMTP profile. Incoming mail accounts remain separate.
 
 ## Configuration
 
-1. Install the built `MultiSMTP-11.1.0.opm` through OTOBO Package Manager.
+1. Install the built `MultiSMTP-11.1.1.opm` through OTOBO Package Manager.
 2. Open **Administration > SMTP settings** and assign the required system
    addresses to their SMTP accounts.
 3. Set `SendmailModule` to `Kernel::System::Email::MultiSMTP` in System
@@ -45,7 +45,7 @@ Run inside an isolated OTOBO 11.1 installation with its normal Perl dependencies
 
 ```sh
 bin/otobo.Console.pl Dev::Package::Build --module-directory /path/to/OTOBO-MultiSMTP /path/to/OTOBO-MultiSMTP/MultiSMTP.sopm /tmp
-bin/otobo.Console.pl Admin::Package::Install /tmp/MultiSMTP-11.1.0.opm
+bin/otobo.Console.pl Admin::Package::Install /tmp/MultiSMTP-11.1.1.opm
 prove -I /path/to/OTOBO-MultiSMTP -I . -I Kernel/cpan-lib /path/to/OTOBO-MultiSMTP/scripts/test/MultiSMTP/*.t
 ```
 
