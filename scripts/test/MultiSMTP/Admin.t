@@ -129,6 +129,31 @@ $Selenium->RunTest(
         for my $ID (qw(Host Port Type AuthMethod User OAuth2FunctionalAccount Anonymous PasswordDecrypted Emails ValidID Comments)) {
             $Selenium->find_element( "#$ID", 'css' );
         }
+        $Self->True(
+            $Selenium->execute_script(q{
+                return ['Host', 'Port', 'User', 'PasswordDecrypted', 'Emails', 'OAuth2FunctionalAccount']
+                    .every(ID => document.getElementById(ID + 'Error'))
+                    && document.getElementById('PasswordDecryptedServerError')
+                    && document.getElementById('ValidIDServerError');
+            }),
+            'required fields have client validation tooltips and password server errors target the input',
+        );
+        $Selenium->find_element( 'form.Validate button[type=submit]', 'css' )->click();
+        $Selenium->execute_script(q{
+            document.getElementById('Host').blur();
+            document.getElementById('Host').focus();
+        });
+        $Self->True(
+            $Selenium->execute_script(q{
+                const Error = document.getElementById('HostError');
+                const Container = document.getElementById('OTOBO_UI_Tooltips_ErrorTooltip');
+                const Tooltip = Container && Container.querySelector('.Tooltip');
+                return document.getElementById('Host').getAttribute('aria-invalid') === 'true'
+                    && Error && Tooltip && getComputedStyle(Container).display !== 'none'
+                    && Tooltip.textContent.trim() === Error.textContent.trim();
+            }),
+            'an empty required field displays its validation tooltip',
+        );
         my $CheckAlignment = sub {
             my ($ID) = @_;
             my $Aligned = $Selenium->execute_script(q{
@@ -238,9 +263,32 @@ $Selenium->RunTest(
             'delete uses the native OTOBO button markup',
         );
         $Selenium->capture_screenshot("$ENV{MULTISMTP_SCREENSHOT_DIR}/list.png") if $ENV{MULTISMTP_SCREENSHOT_DIR};
-        $Selenium->find_element(
+        my $DeleteButton = $Selenium->find_element(
             "//form[contains(concat(' ', normalize-space(\@class), ' '), ' DeleteSMTP ')][.//input[\@name='ID' and \@value='$BasicProfile{ID}']]//button"
-        )->VerifiedClick();
+        );
+        $DeleteButton->click();
+        my $DeleteDialogVisible = $Selenium->execute_script(q{
+            return $('.Dialog.Modal:visible #DialogButton1').length === 1
+                && $('.Dialog.Modal:visible #DialogButton2').length === 1;
+        });
+        $Self->True( $DeleteDialogVisible, 'delete asks for confirmation before submitting the form' );
+        $Self->Is(
+            $Selenium->execute_script(q{return $('.Dialog:visible .Header h1').text().trim();}),
+            'Usuń konto',
+            'delete confirmation title uses the agent language',
+        );
+        my %AfterDeleteClick = $SMTPObject->SMTPGet( ID => $BasicProfile{ID} );
+        $Self->True( $AfterDeleteClick{ID}, 'opening the delete dialog leaves the SMTP account intact' );
+        if ($DeleteDialogVisible) {
+            $Selenium->find_element( '#DialogButton2', 'css' )->click();
+            %AfterDeleteClick = $SMTPObject->SMTPGet( ID => $BasicProfile{ID} );
+            $Self->True( $AfterDeleteClick{ID}, 'canceling delete preserves the SMTP account' );
+
+            $Selenium->find_element(
+                "//form[contains(concat(' ', normalize-space(\@class), ' '), ' DeleteSMTP ')][.//input[\@name='ID' and \@value='$BasicProfile{ID}']]//button"
+            )->click();
+            $Selenium->find_element( '#DialogButton1', 'css' )->VerifiedClick();
+        }
         my %AfterValidDelete = $SMTPObject->SMTPGet( ID => $BasicProfile{ID} );
         $Self->False( $AfterValidDelete{ID}, 'delete form submits with its challenge token and removes the selected account' );
 

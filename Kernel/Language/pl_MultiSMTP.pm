@@ -8,9 +8,9 @@ sub Data {
     my $Self = shift;
     my $Lang = $Self->{Translation};
 
-    $Lang->{'SMTP settings'} = 'Ustawienia SMTP';
-    $Lang->{'Manage SMTP settings.'} = 'Zarządzanie ustawieniami SMTP.';
-    $Lang->{'SMTP Management'} = 'Zarządzanie kontami SMTP';
+    $Lang->{'SMTP settings'} = 'Konta SMTP';
+    $Lang->{'Manage SMTP settings.'} = 'Zarządzanie kontami SMTP.';
+    $Lang->{'SMTP Management'} = 'Konta SMTP';
     $Lang->{'Add SMTP'} = 'Dodaj konto SMTP';
     $Lang->{'Add/Change SMTP'} = 'Dodaj lub edytuj konto SMTP';
     $Lang->{'Anonymous SMTP'} = 'SMTP bez uwierzytelniania';
@@ -24,6 +24,7 @@ sub Data {
     $Lang->{'Please select a valid authentication method.'} = 'Wybierz prawidłowy sposób uwierzytelniania.';
     $Lang->{'Please select a valid OAuth functional account.'} = 'Wybierz prawidłowe konto funkcyjne OAuth.';
     $Lang->{'Select at least one email address.'} = 'Wybierz co najmniej jeden adres nadawcy.';
+    $Lang->{'Do you really want to delete this SMTP account?'} = 'Czy na pewno chcesz usunąć to konto SMTP?';
 }
 
 1;

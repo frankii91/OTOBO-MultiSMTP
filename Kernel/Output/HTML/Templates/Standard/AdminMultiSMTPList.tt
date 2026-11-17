@@ -70,3 +70,38 @@
     </div>
     <div class="Clear"></div>
 </div>
+<div class="Hidden" id="DeleteSMTPDialogContainer">
+    <div class="InnerContent GenericInterfaceDialog">
+        <p class="Center Spacing">[% Translate("Do you really want to delete this SMTP account?") | html %]</p>
+        <div class="SpacingTop"></div>
+    </div>
+</div>
+[% WRAPPER JSOnDocumentComplete %]
+<script type="text/javascript">
+    $('form.DeleteSMTP').on('submit', function (Event) {
+        var Form = this;
+        Event.preventDefault();
+        Core.UI.Dialog.ShowContentDialog(
+            $('#DeleteSMTPDialogContainer'),
+            [% Translate("Delete account") | JSON %],
+            '240px',
+            'Center',
+            true,
+            [
+                {
+                    Class: 'Primary',
+                    Label: Core.Language.Translate('Confirm'),
+                    Function: function () {
+                        Core.UI.Dialog.CloseDialog($('#DialogButton1'));
+                        Form.submit();
+                    }
+                },
+                {
+                    Label: Core.Language.Translate('Cancel'),
+                    Type: 'Close'
+                }
+            ]
+        );
+    });
+</script>
+[% END %]

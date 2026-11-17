@@ -35,12 +35,14 @@
                         <label for="Host" class="Mandatory"><span class="Marker">*</span>[% Translate("Host") | html %]:</label>
                         <div class="Field">
                             <input type="text" id="Host" name="Host" value="[% Data.Host | html %]" class="W75pc Validate_Required [% Data.HostInvalid | html %]" maxlength="250"/>
+                            <div id="HostError" class="TooltipErrorMessage"><p>[% Translate("This field is required.") | html %]</p></div>
                             <div id="HostServerError" class="TooltipErrorMessage"><p>[% Translate("This field is required.") | html %]</p></div>
                         </div><div class="Clear"></div>
 
                         <label for="Port" class="Mandatory"><span class="Marker">*</span>[% Translate("Port") | html %]:</label>
                         <div class="Field">
                             <input type="text" id="Port" name="Port" value="[% Data.Port | html %]" class="W10pc Validate_Required [% Data.PortInvalid | html %]" maxlength="5"/>
+                            <div id="PortError" class="TooltipErrorMessage"><p>[% Translate("Please enter a valid port.") | html %]</p></div>
                             <div id="PortServerError" class="TooltipErrorMessage"><p>[% Translate("Please enter a valid port.") | html %]</p></div>
                         </div><div class="Clear"></div>
 
@@ -59,6 +61,7 @@
                         <label for="User" id="UserLabel" class="Mandatory"><span id="UserMarker" class="Marker">*</span>[% Translate("User") | html %]:</label>
                         <div class="Field">
                             <input type="text" id="User" name="User" value="[% Data.User | html %]" class="W75pc Validate_Required [% Data.UserInvalid | html %]" maxlength="200"/>
+                            <div id="UserError" class="TooltipErrorMessage"><p>[% Translate("This field is required.") | html %]</p></div>
                             <div id="UserServerError" class="TooltipErrorMessage"><p>[% Translate("This field is required.") | html %]</p></div>
                         </div><div class="Clear"></div>
 
@@ -66,6 +69,7 @@
                             <label for="OAuth2FunctionalAccount" class="Mandatory"><span class="Marker">*</span>[% Translate("OAuth functional account") | html %]:</label>
                             <div class="Field">
                                 [% Data.OAuth2FunctionalAccountSelect %]
+                                <div id="OAuth2FunctionalAccountError" class="TooltipErrorMessage"><p>[% Translate("Please select a valid OAuth functional account.") | html %]</p></div>
                                 <div id="OAuth2FunctionalAccountServerError" class="TooltipErrorMessage"><p>[% Translate("Please select a valid OAuth functional account.") | html %]</p></div>
                             </div><div class="Clear"></div>
                         </div>
@@ -81,18 +85,23 @@
                             <label for="PasswordDecrypted" id="PasswordLabel" class="Mandatory"><span id="PasswordMarker" class="Marker">*</span>[% Translate("Password") | html %]:</label>
                             <div class="Field">
                                 <input type="password" id="PasswordDecrypted" name="PasswordDecrypted" value="" autocomplete="new-password" placeholder="[% Translate(Data.PasswordPlaceholder) | html %]" class="W75pc [% Data.PasswordRequired ? 'Validate_Required' : '' %] [% Data.PasswordInvalid | html %]" maxlength="250"/>
-                                <div id="PasswordServerError" class="TooltipErrorMessage"><p>[% Translate("A password is required for this account.") | html %]</p></div>
+                                <div id="PasswordDecryptedError" class="TooltipErrorMessage"><p>[% Translate("A password is required for this account.") | html %]</p></div>
+                                <div id="PasswordDecryptedServerError" class="TooltipErrorMessage"><p>[% Translate("A password is required for this account.") | html %]</p></div>
                             </div><div class="Clear"></div>
                         </div>
 
                         <label for="Emails" class="Mandatory"><span class="Marker">*</span>[% Translate("Emails") | html %]:</label>
                         <div class="Field">
                             [% Data.EmailsSelect %]
+                            <div id="EmailsError" class="TooltipErrorMessage"><p>[% Translate("Select at least one email address.") | html %]</p></div>
                             <div id="EmailsServerError" class="TooltipErrorMessage"><p>[% Translate("Select at least one email address.") | html %]</p></div>
                         </div><div class="Clear"></div>
 
                         <label for="ValidID" class="Mandatory"><span class="Marker">*</span>[% Translate("Validity") | html %]:</label>
-                        <div class="Field">[% Data.ValidSelect %]</div><div class="Clear"></div>
+                        <div class="Field">
+                            [% Data.ValidSelect %]
+                            <div id="ValidIDServerError" class="TooltipErrorMessage"><p>[% Translate("This field is required.") | html %]</p></div>
+                        </div><div class="Clear"></div>
 
                         <label for="Comments">[% Translate("Comment") | html %]:</label>
                         <div class="Field"><input type="text" id="Comments" name="Comments" value="[% Data.Comments | html %]" class="W75pc" maxlength="250"/></div><div class="Clear"></div>
